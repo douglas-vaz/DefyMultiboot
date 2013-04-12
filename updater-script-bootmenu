@@ -1,0 +1,66 @@
+ui_print("*******************************************");
+ui_print("** Touch-Bootmenu + Multiboot {DATE}");
+ui_print("** Bootmenu-Version: {BOOTMENU_VERSION}");
+ui_print("** Multiboot-Version: {MULTIBOOT_VERSION}");
+ui_print("*******************************************");
+
+ui_print("Mount system RW...");
+mount("ext3", "EMMC", "/dev/block/mmcblk1p21", "/system");
+
+ui_print("running shell-script for TLS-detection...");
+package_extract_file("META-INF/com/google/android/script-tls-detection.sh", "/tmp/script-tls-detection.sh");
+set_perm(0, 0, 0777, "/tmp/script-tls-detection.sh");
+run_program("/tmp/script-tls-detection.sh");
+
+ui_print("remove old files...");
+delete_recursive("/system/bootmenu/2nd-system");
+delete_recursive("/system/bootmenu/binary");
+delete_recursive("/system/bootmenu/images");
+delete_recursive("/system/bootmenu/script");
+delete("/system/bin/lsof");
+delete("/system/bin/bootmenu");
+delete("/system/bin/logwrapper");
+delete("/system/bin/logwrapper.bin");
+delete("/system/xbin/logwrapper");
+
+ui_print("copy new files...");
+package_extract_dir("system/addon.d", "/system/addon.d");
+package_extract_dir("system/bootmenu/2nd-system", "/system/bootmenu/2nd-system");
+package_extract_dir("system/bootmenu/binary", "/system/bootmenu/binary");
+package_extract_dir("system/bootmenu/images", "/system/bootmenu/images");
+package_extract_dir("system/bootmenu/script", "/system/bootmenu/script");
+package_extract_dir("system/bin", "/system/bin");
+package_extract_file("system/bin/bootmenu", "/system/bootmenu/binary/bootmenu");
+
+ui_print("create symlinks...");
+symlink("/system/bin/logwrapper.bin","/system/xbin/logwrapper");
+symlink("/system/bin/bootmenu", "/system/bin/logwrapper");
+symlink("/system/bootmenu/binary/lsof", "/system/bin/lsof");
+symlink("indeterminate.png","/system/bootmenu/images/indeterminate1.png");
+symlink("indeterminate.png","/system/bootmenu/images/indeterminate2.png");
+symlink("indeterminate.png","/system/bootmenu/images/indeterminate3.png");
+symlink("indeterminate.png","/system/bootmenu/images/indeterminate4.png");
+symlink("indeterminate.png","/system/bootmenu/images/indeterminate5.png");
+symlink("indeterminate.png","/system/bootmenu/images/indeterminate6.png");
+
+ui_print("running shell-script...");
+package_extract_dir("system/bootmenu", "/tmp/bootmenu-installer/bootmenu");
+package_extract_file("META-INF/com/google/android/script-bootmenu-installer.sh", "/tmp/bootmenu-installer/script.sh");
+set_perm(0, 0, 0777, "/tmp/bootmenu-installer/script.sh");
+run_program("/tmp/bootmenu-installer/script.sh");
+
+ui_print("set permissions...");
+set_perm_recursive(0, 0, 0755, 0644, "/system/bootmenu");
+set_perm_recursive(0, 0, 0755, 0755, "/system/bootmenu/binary/");
+set_perm_recursive(0, 0, 0755, 0755, "/system/bootmenu/script/");
+set_perm_recursive(0, 0, 0755, 0755, "/system/bootmenu/recovery/sbin/");
+set_perm_recursive(0, 0, 0755, 0755, "/system/bootmenu/2nd-init/sbin/");
+set_perm_recursive(0, 0, 0755, 0755, "/system/bootmenu/2nd-boot/sbin/");
+set_perm_recursive(0, 0, 0755, 0755, "/system/bootmenu/2nd-system/");
+set_perm_recursive(0, 2000, 0775, 0664, "/system/bootmenu/config/");
+set_perm(0, 0, 0755, "/system/bootmenu/2nd-init/init");
+set_perm(0, 0, 0755, "/system/bootmenu/2nd-boot/init");
+set_perm(0, 0755, 0755, "/system/bin/bootmenu");
+set_perm(0, 0755, 0755, "/system/bin/logwrapper.bin");
+
+ui_print("Done.");

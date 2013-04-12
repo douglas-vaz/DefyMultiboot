@@ -9,51 +9,22 @@ fshook_pathsetup()
 {
   logd "setup paths..."
   ### specify paths	
-	# set global var for partition
-	setenv FSHOOK_CONFIG_PARTITION "$MC_DEFAULT_PARTITION"
-	setenv FSHOOK_CONFIG_PATH "$MC_DEFAULT_PATH"
+  # set global var for partition
+  setenv FSHOOK_CONFIG_PARTITION "$MC_DEFAULT_PARTITION"
+  setenv FSHOOK_CONFIG_PATH "$MC_DEFAULT_PATH"
 	
-	# mount partition which contains fs-image
+  # mount partition which contains fs-image
   logd "mounting imageSrc-partition..."
   mkdir -p $FSHOOK_PATH_MOUNT_IMAGESRC
   mount -o rw $FSHOOK_CONFIG_PARTITION $FSHOOK_PATH_MOUNT_IMAGESRC
 	
-	# check for bypass-file
-	if [ -f $FSHOOK_PATH_MOUNT_CACHE/multiboot/.bypass ];then
-	   logi "Bypass GUI!"
-	   bypass_data=`cat $FSHOOK_PATH_MOUNT_CACHE/multiboot/.bypass`
-	   result_mode=`echo $bypass_data | cut -d':' -f1`
-	   result_name=`echo $bypass_data | cut -d':' -f2`
-	   rm -f $FSHOOK_PATH_MOUNT_CACHE/multiboot/.bypass
-	   
+  # check for bypass-file
+  if [ -n "$BMVAR_SYSTEMNAME" ];then
+     logi "Bootmenu passed: $BMVAR_SYSTEMNAME"
+     setenv FSHOOK_CONFIG_VS "$FSHOOK_CONFIG_PATH/$BMVAR_SYSTEMNAME"
+     logd "virtual system: $FSHOOK_CONFIG_VS"
   else
-   	 # generate args for GUI
-	   logd "search for virtual systems..."
-	   args=""
-	   for file in $FSHOOK_PATH_MOUNT_IMAGESRC$FSHOOK_CONFIG_PATH/*; do
-	     if [ -d $file ]; then
-	       logd "found $file!"
-	       name=`basename $file`
-	       args="$args$name "
-	     fi
-	   done
-	  
-	   # get fshook_folder from GUI
-	   logi "starting GUI..."
-	   result=`/system/bootmenu/binary/multiboot $args`
-	   logd "GUI returned: $result"
-	   logd "parsing results of GUI..."
-	   result_mode=`echo $result |cut -d' ' -f1`
-	   result_name=`echo $result |cut -d' ' -f2`
-  fi
-	
-  # set 2nd argument as fshook_folder
-  if [ -n $result_name ]; then
-    
-    # set global var for path to virtual system
-    setenv FSHOOK_CONFIG_VS "$FSHOOK_CONFIG_PATH/$result_name"
-  
-    logd "virtual system: $FSHOOK_CONFIG_VS"
+     exit 1
   fi
   
   logd "path-setup done!"
@@ -67,7 +38,7 @@ fshook_init()
   logd "mounting ramdisk rw..."
   mount -o remount,rw /
  
-  # copy fshook-files to ramdisk so we can access it while system is unmounted
+  # copy fshook-files to ramdisk so we can access them while system is unmounted
   logd "copy multiboot-files to ramdisk..."
   mkdir -p $FSHOOK_PATH_RD_FILES
   cp -Rf $FSHOOK_PATH_INSTALLATION/* $FSHOOK_PATH_RD_FILES
@@ -86,31 +57,6 @@ fshook_init()
   
   # setup paths(already mounts fsimage-partition)
   fshook_pathsetup
-  bootmode=$result_mode
-  logi "bootmode: $bootmode"
-  
-  # parse bootmode
-  if [ "$bootmode" = "bootvirtual" ];then
-   logi "Booting virtual system..."
-   #checkKernel
-  elif [ "$bootmode" = "bootnand" ];then
-   logi "Booting from NAND..."
-   cleanup
-   logd "run 2nd-init..."
-   $BM_ROOTDIR/script/2nd-init.sh
-   exit $?
-  elif [ "$bootmode" = "recovery" ];then
-   logi "Booting recovery for virtual system..."
-   source $FSHOOK_PATH_RD_FILES/fshook.bootrecovery.sh
-   exit 1
-  elif [ "$bootmode" = "nandrecovery" ];then
-   logi "Booting recovery for NAND-system..."
-   cleanup
-   $BM_ROOTDIR/script/recovery_stable.sh
-   exit $?
-  else
-   throwError
-  fi
 }
 
 checkKernel()
@@ -147,28 +93,31 @@ checkKernel()
       logi "Flashing VS's partitions..."
       
       # flash VS's partition's
-		  dd if="$FSHOOK_PATH_MOUNT_IMAGESRC$FSHOOK_CONFIG_VS/.nand/boot.img" of=/dev/block/boot
-		  dd if="$FSHOOK_PATH_MOUNT_IMAGESRC$FSHOOK_CONFIG_VS/.nand/devtree.img" of=/dev/block/mmcblk1p12
-		  dd if="$FSHOOK_PATH_MOUNT_IMAGESRC$FSHOOK_CONFIG_VS/.nand/logo.img" of=/dev/block/mmcblk1p10
-		  
-		  # reboot
+      dd if="$FSHOOK_PATH_MOUNT_IMAGESRC$FSHOOK_CONFIG_VS/.nand/boot.img" of=/dev/block/boot
+      dd if="$FSHOOK_PATH_MOUNT_IMAGESRC$FSHOOK_CONFIG_VS/.nand/devtree.img" of=/dev/block/mmcblk1p12
+      dd if="$FSHOOK_PATH_MOUNT_IMAGESRC$FSHOOK_CONFIG_VS/.nand/logo.img" of=/dev/block/mmcblk1p10
+      
+      # reboot
       echo "bootvirtual:$result_name" > $FSHOOK_PATH_MOUNT_CACHE/multiboot/.bypass
       reboot
-	 else
-		  logi "NAND already uses same partitions like VS."
-	 fi
+      else
+	  logi "NAND already uses same partitions like VS."
+      fi
 }
 
 cleanup()
 {
-   logd "undo changes..."
+   logd "cleanup..."
    umount $FSHOOK_PATH_MOUNT_IMAGESRC
-   errorCheck
-   umount $FSHOOK_PATH_MOUNT_CACHE
-   errorCheck
+   umount $FSHOOK_PATH_MOUNT_SYSTEM
    umount $FSHOOK_PATH_MOUNT_DATA
-   errorCheck
-   rm -rf $FSHOOK_PATH_RD
+   umount $FSHOOK_PATH_MOUNT_CACHE
+   
+   if [ `busybox mount | grep -c '/fshook'` -lt 1 ];then
+      rm -rf $FSHOOK_PATH_RD
+   else
+      throwError 1
+   fi
 }
 
 move_system()
@@ -180,13 +129,47 @@ move_system()
   errorCheck
 }
 
-patch_initrc()
+tlscheck()
 {
-  logd "patching init.rc..."
-  cp -f $FSHOOK_PATH_RD_FILES/init.hook.rc /init.rc
-  cat /system/bootmenu/2nd-init/init.rc >> /init.rc
-  errorCheck
-} 
+  # multiboot not installed
+  if [ "`cat /system/bootmenu/script/pre_bootmenu.sh | grep -c '\.enabletls'`" -eq 0 ];then
+  
+    # and tls-enabled
+    if [ "`cat /system/bootmenu/script/pre_bootmenu.sh | grep -c 'tls-enable\.ko'`" -ge 1 ];then
+      load_tls_module
+      
+    # and tls-disabled
+    else
+      unload_tls_module
+    fi
+  
+  # multiboot installed and tls-enabled
+  elif [ -f /system/bootmenu/config/.enabletls ];then
+    load_tls_module
+    
+  # multiboot installed and tls-disabled
+  else
+    unload_tls_module
+  fi
+}
+
+load_tls_module()
+{
+  load_symsearch
+  if [ -z "`lsmod | grep tls_enable`" ]; then
+    logd "Loading kernel_module: tls-enable.ko"
+    insmod $FSHOOK_PATH_RD_FILES/kernel-modules/tls-enable.ko
+    errorCheck
+  fi
+}
+
+unload_tls_module()
+{
+  if [ -n "`lsmod | grep tls_enable`" ]; then
+    logd "Unload kernel_module: tls-enable.ko"
+    rmmod tls_enable
+  fi
+}
 
 bypass_sign()
 {
@@ -242,7 +225,7 @@ replacePartition()
   # losetup returns 1 if filename is longer than 9 chars and losetup already done by init for some reason
   if [ "$fshookstatus" == "init" ] || [ "$fshookstatus" == "recovery" ];then
 	  logd "setup loop..."
-	  losetup /dev/block/loop$LOOPID "$FSHOOK_PATH_MOUNT_IMAGESRC/$FILENAME"
+	  losetup /dev/block/loop$LOOPID "$FSHOOK_PATH_MOUNT_IMAGESRC$FILENAME"
     errorCheck
   fi
   
@@ -270,7 +253,7 @@ throwError()
     cp -f $logpath/multiboot.log $logpath/error.log
 
     # show graphical error
-    $FSHOOK_PATH_RD_FILES/errormessage $1
+    $FSHOOK_PATH_RD_FILES/binary/errormessage $1
     
     # reboot and exit
     reboot
@@ -312,6 +295,87 @@ loadEnv()
       logd "Loading environment..."
       source $FSHOOK_PATH_RD/config.sh
   fi
+}
+
+setup_loopdevices()
+{
+  logi "Setting up loop-devices..."
+	mkdir -p "$FSHOOK_PATH_MOUNT_IMAGESRC/$FSHOOK_CONFIG_VS/.nand"
+	mkdir -p "$FSHOOK_PATH_MOUNT_IMAGESRC/$FSHOOK_CONFIG_PATH/.nand"
+	mkdir -p "$FSHOOK_PATH_RD_NODES"
+	for i in `seq 1 25`; do
+	  # exclude system, data and cache
+	  if [ $i -eq 21 ];then
+	    imagename="$FSHOOK_CONFIG_VS/system.img"
+	  elif [ $i -eq 24 ];then
+	    imagename="$FSHOOK_CONFIG_VS/cache.img"
+	  elif [ $i -eq 25 ];then
+	    imagename="$FSHOOK_CONFIG_VS/data.img"
+	  else
+	    # backup rom-specific partitions to vs-folder
+	    if [ $i -eq 15 ];then
+	      imagename="$FSHOOK_CONFIG_VS/.nand/boot.img"
+	    elif [ $i -eq 16 ];then
+	      imagename="$FSHOOK_CONFIG_VS/.nand/recovery.img"
+	    elif [ $i -eq 7 ];then
+	      imagename="$FSHOOK_CONFIG_VS/.nand/pds.img"
+	    elif [ $i -eq 12 ];then
+	      imagename="$FSHOOK_CONFIG_VS/.nand/devtree.img"
+	    elif [ $i -eq 10 ];then
+	      imagename="$FSHOOK_CONFIG_VS/.nand/logo.img"
+	      
+	    # backup everything else into global nand-folder
+	    else
+	      imagename="$FSHOOK_CONFIG_PATH/.nand/mmcblk1p$i.img"
+	    fi
+	    
+	    # backup partition if it doesn't exists
+	    if [ ! -f "$FSHOOK_PATH_MOUNT_IMAGESRC$imagename" ];then
+	      logd "backup partition /dev/block/mmcblk1p$i to $FSHOOK_PATH_MOUNT_IMAGESRC$imagename..."
+	      # backup current partition
+	      dd if=/dev/block/mmcblk1p$i of="$FSHOOK_PATH_MOUNT_IMAGESRC$imagename"
+	    fi
+	  fi
+	  
+	  # replace partition
+	  replacePartition $FSHOOK_PATH_RD_NODES/mmcblk1p$i "$imagename" $(($FSHOOK_LOOPNUMBER_START+$i-1))
+	done
+}
+
+load_symsearch()
+{
+	if [ -z "`lsmod | grep symsearch`" ]; then
+  		logd "Loading kernel_module: symsearch.ko"
+		insmod $FSHOOK_PATH_RD_FILES/kernel-modules/symsearch.ko
+		errorCheck
+	fi
+}
+
+load_kernelmodules()
+{
+  	logi "Loading kernel-modules..."
+	load_symsearch	
+
+	logd "Loading kernel_module: multiboot.ko"
+	insmod $FSHOOK_PATH_RD_FILES/kernel-modules/multiboot.ko
+	errorCheck
+}
+
+extractRamdiskFromBoot()
+{
+  bootimgfile="$FSHOOK_PATH_MOUNT_IMAGESRC$FSHOOK_CONFIG_VS/.nand/boot.img"
+  if [ -f "$bootimgfile" ]; then
+	  # unpack bootimg
+	  mkdir -p "$FSHOOK_PATH_RD_TMP/unpackbootimg"
+	  $FSHOOK_PATH_RD_FILES/binary/unpackbootimg -i "$bootimgfile" -o "$FSHOOK_PATH_RD_TMP/unpackbootimg"
+	  
+	  # extract ramdisk to root
+	  cd /
+	  gunzip -c "$FSHOOK_PATH_RD_TMP/unpackbootimg/boot.img-ramdisk.gz" | cpio -i -u
+	  
+	  # cleanup
+	  rm -rf $FSHOOK_PATH_RD_TMP/unpackbootimg/*
+ fi
 }
 
 getLogpath()

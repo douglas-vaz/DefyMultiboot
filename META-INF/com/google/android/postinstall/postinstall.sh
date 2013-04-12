@@ -1,7 +1,7 @@
 #!/sbin/sh
 
 # check for 2ndsystem-support
-if [ `busybox strings /system/bin/bootmenu | busybox grep -ci '\[2nd-system\]'` -lt 1 ];then
+if [ `busybox strings /system/bin/bootmenu | busybox grep -ci '2nd-system'` -lt 1 ];then
   supports_2ndsystem=false
 else
   supports_2ndsystem=true
@@ -21,11 +21,4 @@ fi
 # check for multiboot-config
 if [ ! -f /system/bootmenu/config/multiboot.conf ];then
   cp -f /tmp/postinstall/multiboot.conf /system/bootmenu/config/multiboot.conf
-fi
-
-# set default-bootmode
-if [ $supports_2ndsystem == true ];then
- echo "2nd-system" > /system/bootmenu/config/default_bootmode.conf
-else
- echo "2nd-boot" > /system/bootmenu/config/default_bootmode.conf
 fi
